@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Face Morphing Studio</title>
+
+    <!-- MEDIAPIPE LIBRARIES (JAVASCRIPT) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/face_mesh.js" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+            color: white;
+            min-height: 100vh;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            text-align: center;
+        }
+        h1 {
+            margin-bottom: 30px;
+            font-size: 2.8em;
+            text-shadow: 2px 2px 8px rgba(0,0,0,0.5);
+            background: linear-gradient(45deg, #4364F7, #6FB1FC, #FFD700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        .controls {
+            margin-bottom: 25px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(255,255,255,0.1);
+            padding: 10px 15px;
+            border-radius: 15px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 25px;
+            background: linear-gradient(45deg, #4364F7, #6FB1FC);
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            font-weight: 600;
+        }
+        select {
+            padding: 11px 20px;
+            font-size: 16px;
+            border-radius: 12px;
+            border: 1px solid #6FB1FC;
+            background-color: #2c5364;
+            color: white;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        button:hover:not(:disabled), select:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.3);
+        }
+        button:disabled, select:disabled {
+            background: #7f8c8d;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+            opacity: 0.7;
+        }
+        .video-container {
+            display: flex;
+            justify-content: center;
+            gap: 30px;
+            flex-wrap: wrap;
+            margin-top: 25px;
+        }
+        .video-wrapper {
+            background: rgba(255,255,255,0.1);
+            padding: 25px;
+            border-radius: 20px;
+            backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        video, canvas {
+            border: 3px solid rgba(255,255,255,0.3);
+            border-radius: 15px;
+            box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+            transform: scaleX(-1);
+        }
+        .video-label {
+            margin-top: 15px;
+            font-size: 18px;
+            font-weight: bold;
+            text-shadow: 1px 1px 3px rgba(0,0,0,0.5);
+        }
+        .status {
+            margin: 25px auto;
+            padding: 18px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            backdrop-filter: blur(15px);
+            max-width: 700px;
+            border: 1px solid rgba(255,255,255,0.2);
+            font-size: 16px;
+            font-weight: 500;
+        }
+        .cyclops-controls {
+            display: none;
+        }
+        .cyclops-controls.active {
+            display: flex;
+        }
+        .control-label {
+            font-size: 14px;
+            font-weight: 600;
+            margin-right: 8px;
+            color: #FFD700;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎭 Face Morphing Studio</h1>
+        <div class="controls">
+            <div class="control-group">
+                <button id="cyclopsBtn">👁️ Cyclops</button>
+                <div class="cyclops-controls" id="cyclopsControls">
+                    <span class="control-label">Feature:</span>
+                    <select id="cyclopsFeatureSelect">
+                        <option value="eye" selected>👁️ Eye</option>
+                        <option value="nose">👃 Nose</option>
+                        <option value="mouth">👄 Mouth</option>
+                    </select>
+                </div>
+            </div>
+            <button id="laserEyesBtn">🔥 Laser Eyes</button>
+            <button id="bigMouthBtn">👄 Big Mouth</button>
+            <div class="control-group">
+                <span class="control-label">Swap Mode:</span>
+                <select id="swapModeSelect">
+                    <option value="normal" selected>👀 Eye Swap</option>
+                    <option value="vertical">↕️ Eye Swap Upside-Down</option>
+                    <option value="mouth_nose">👄 Nose/Mouth Swap</option>
+                    <option value="all_mouths">👄👄 All Mouths</option>
+                    <option value="all_noses">👃👃 All Noses</option>
+                </select>
+            </div>
+            <button id="normalBtn">😊 Normal</button>
+        </div>
+        <div id="status" class="status">Loading MediaPipe...</div>
+        <div class="video-container">
+            <div class="video-wrapper">
+                <video id="input_video" style="display: none;"></video>
+                <canvas id="output_canvas" width="640px" height="480px"></canvas>
+                <div class="video-label">✨ Live Output</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // DOM Elements
+        const videoElement = document.getElementById('input_video');
+        const canvasElement = document.getElementById('output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        const statusDiv = document.getElementById('status');
+        const cyclopsControls = document.getElementById('cyclopsControls');
+
+        // State Variables
+        let currentEffect = "normal";
+        let swapMode = "normal";
+        let cyclopsFeature = "eye";
+        const CANVAS_WIDTH = canvasElement.width;
+        const CANVAS_HEIGHT = canvasElement.height;
+
+        // MEDIAPIPE LANDMARK INDICES
+        const RIGHT_EYE_INDICES = [33, 160, 158, 133, 153, 144];
+        const LEFT_EYE_INDICES = [362, 385, 387, 263, 373, 380];
+        const MOUTH_INDICES = [61, 291, 0, 17, 78, 308];
+        const NOSE_INDICES = [1, 4, 5, 98, 327];
+        const LEFT_IRIS_INDICES = [473, 474, 475, 476, 477];
+        const RIGHT_IRIS_INDICES = [468, 469, 470, 471, 472];
+
+        // Function to set effect
+        function setEffect(effectName) {
+            currentEffect = effectName;
+
+            // Show/hide cyclops controls
+            if (effectName === "cyclops") {
+                cyclopsControls.classList.add('active');
+            } else {
+                cyclopsControls.classList.remove('active');
+            }
+
+            updateStatusMessage();
+        }
+
+        // Function to set swap mode
+        function setSwapMode(modeName) {
+            swapMode = modeName;
+            setEffect("swap");
+        }
+
+        // Function to set cyclops feature
+        function setCyclopsFeature(feature) {
+            cyclopsFeature = feature;
+            updateStatusMessage();
+        }
+
+        // Function to update status message
+        function updateStatusMessage() {
+            const effectMap = {
+                "normal": "😊 Normal",
+                "cyclops": `👁️ Cyclops (${cyclopsFeature === 'eye' ? 'Eye' : cyclopsFeature === 'nose' ? 'Nose' : 'Mouth'})`,
+                "laser_eyes": "🔥 Laser Eyes",
+                "big_mouth": "👄 Big Mouth",
+                "swap": {
+                    "normal": "👀 Eye Swap",
+                    "vertical": "↕️ Eye Swap (Vertical)",
+                    "mouth_nose": "👄 Nose/Mouth Swap",
+                    "all_mouths": "👄👄 All Mouths",
+                    "all_noses": "👃👃 All Noses"
+                }
+            };
+
+            let message;
+            if (currentEffect === "swap") {
+                message = effectMap.swap[swapMode] || "None";
+            } else {
+                message = effectMap[currentEffect] || "None";
+            }
+
+            statusDiv.innerHTML = `✨ Active Effect: ${message}`;
+        }
+
+        // Function to get stable bounding box
+        function getStableBoundingBox(landmarks, indices, isEye = false) {
+            const selected = indices.map(i => landmarks[i]);
+            const points = selected.map(p => ({
+                x: p.x * CANVAS_WIDTH,
+                y: p.y * CANVAS_HEIGHT
+            }));
+
+            if (points.length === 0) return [0, 0, 0, 0];
+
+            const xs = points.map(p => p.x);
+            const ys = points.map(p => p.y);
+            const xMin = Math.min(...xs);
+            const xMax = Math.max(...xs);
+            const yMin = Math.min(...ys);
+            const yMax = Math.max(...ys);
+
+            let width = xMax - xMin;
+            let height = yMax - yMin;
+            let finalY = yMin;
+
+            if (isEye) {
+                height = width * 0.7;
+                const yCenter = yMin + (yMax - yMin) / 2;
+                finalY = yCenter - height / 2;
+            }
+
+            const paddingX = width * 0.15;
+            const paddingY = height * 0.15;
+            const finalX = xMin - paddingX;
+            finalY = finalY - paddingY;
+            const finalW = width + (paddingX * 2);
+            const finalH = height + (paddingY * 2);
+
+            return [finalX, finalY, finalW, finalH];
+        }
+
+        // Function to convert ImageData to drawable element
+        function imageDataToDrawable(imgData) {
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = imgData.width;
+            tempCanvas.height = imgData.height;
+            tempCtx.putImageData(imgData, 0, 0);
+            return tempCanvas;
+        }
+
+        // Function to flip ImageData
+        function flipImageData(imgData, vertical = false) {
+            const drawableImage = imageDataToDrawable(imgData);
+            const tempCanvas = document.createElement('canvas');
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCanvas.width = drawableImage.width;
+            tempCanvas.height = drawableImage.height;
+
+            tempCtx.save();
+            if (vertical) {
+                tempCtx.scale(1, -1);
+                tempCtx.drawImage(drawableImage, 0, -drawableImage.height);
+            } else {
+                tempCtx.scale(-1, 1);
+                tempCtx.drawImage(drawableImage, -drawableImage.width, 0);
+            }
+            tempCtx.restore();
+
+            return tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+        }
+
+        // Cyclops Effect
+        function applyCyclopsEffect(landmarks) {
+            let sourceIndices, sourceName;
+
+            switch (cyclopsFeature) {
+                case "eye":
+                    sourceIndices = RIGHT_EYE_INDICES;
+                    sourceName = "eye";
+                    break;
+                case "nose":
+                    sourceIndices = NOSE_INDICES;
+                    sourceName = "nose";
+                    break;
+                case "mouth":
+                    sourceIndices = MOUTH_INDICES;
+                    sourceName = "mouth";
+                    break;
+                default:
+                    sourceIndices = RIGHT_EYE_INDICES;
+                    sourceName = "eye";
+            }
+
+            const isEyeFeature = cyclopsFeature === "eye";
+            const [x, y, w, h] = getStableBoundingBox(landmarks, sourceIndices, isEyeFeature);
+
+            if (w <= 1 || h <= 1) return;
+
+            const featureData = canvasCtx.getImageData(x, y, w, h);
+            const foreheadPoint = landmarks[10]; // Forehead center point
+
+            // Position the feature on the forehead
+            const targetX = (foreheadPoint.x * CANVAS_WIDTH) - (w * 0.5);
+            const targetY = (foreheadPoint.y * CANVAS_HEIGHT) - (h * 0.5);
+
+            canvasCtx.putImageData(featureData, targetX, targetY);
+        }
+
+        // Eye Swap Effect
+        function applyEyeSwapEffect(landmarks) {
+            const [lEyeX, lEyeY, lEyeW, lEyeH] = getStableBoundingBox(landmarks, LEFT_EYE_INDICES, true);
+            const [rEyeX, rEyeY, rEyeW, rEyeH] = getStableBoundingBox(landmarks, RIGHT_EYE_INDICES, true);
+
+            if (lEyeW <= 1 || rEyeW <= 1) return;
+
+            if (swapMode === "normal" || swapMode === "vertical") {
+                let leftData = canvasCtx.getImageData(lEyeX, lEyeY, lEyeW, lEyeH);
+                let rightData = canvasCtx.getImageData(rEyeX, rEyeY, rEyeW, rEyeH);
+
+                if (swapMode === "vertical") {
+                    leftData = flipImageData(leftData, true);
+                    rightData = flipImageData(rightData, true);
+                }
+
+                canvasCtx.drawImage(imageDataToDrawable(leftData), rEyeX, rEyeY, rEyeW, rEyeH);
+                canvasCtx.drawImage(imageDataToDrawable(rightData), lEyeX, lEyeY, lEyeW, lEyeH);
+
+            } else if (swapMode === "mouth_nose") {
+                const [mouthX, mouthY, mouthW, mouthH] = getStableBoundingBox(landmarks, MOUTH_INDICES);
+                const [noseX, noseY, noseW, noseH] = getStableBoundingBox(landmarks, NOSE_INDICES);
+
+                if (mouthW <= 1 || noseW <= 1) return;
+
+                const mouthData = canvasCtx.getImageData(mouthX, mouthY, mouthW, mouthH);
+                const noseData = canvasCtx.getImageData(noseX, noseY, noseW, noseH);
+
+                canvasCtx.drawImage(imageDataToDrawable(mouthData), lEyeX, lEyeY, lEyeW, lEyeH);
+                canvasCtx.drawImage(imageDataToDrawable(noseData), rEyeX, rEyeY, rEyeW, rEyeH);
+
+            } else if (swapMode === "all_mouths") {
+                const [mouthX, mouthY, mouthW, mouthH] = getStableBoundingBox(landmarks, MOUTH_INDICES);
+                if (mouthW <= 1) return;
+
+                const mouthData = canvasCtx.getImageData(mouthX, mouthY, mouthW, mouthH);
+                canvasCtx.drawImage(imageDataToDrawable(mouthData), lEyeX, lEyeY, lEyeW, lEyeH);
+                canvasCtx.drawImage(imageDataToDrawable(mouthData), rEyeX, rEyeY, rEyeW, rEyeH);
+
+            } else if (swapMode === "all_noses") {
+                const [noseX, noseY, noseW, noseH] = getStableBoundingBox(landmarks, NOSE_INDICES);
+                if (noseW <= 1) return;
+
+                const noseData = canvasCtx.getImageData(noseX, noseY, noseW, noseH);
+                canvasCtx.drawImage(imageDataToDrawable(noseData), lEyeX, lEyeY, lEyeW, lEyeH);
+                canvasCtx.drawImage(imageDataToDrawable(noseData), rEyeX, rEyeY, rEyeW, rEyeH);
+            }
+        }
+
+        // Function to draw fireball
+        function drawFireball(x, y, radius) {
+            const gradient = canvasCtx.createRadialGradient(x, y, radius * 0.1, x, y, radius);
+            gradient.addColorStop(0, "rgba(255, 255, 255, 0.9)");
+            gradient.addColorStop(0.3, "rgba(255, 255, 0, 0.8)");
+            gradient.addColorStop(0.7, "rgba(255, 100, 0, 0.6)");
+            gradient.addColorStop(1, "rgba(255, 0, 0, 0)");
+
+            canvasCtx.fillStyle = gradient;
+            canvasCtx.beginPath();
+            canvasCtx.arc(x, y, radius, 0, 2 * Math.PI);
+            canvasCtx.fill();
+        }
+
+        // Laser Eyes Effect
+        function applyLaserEyesEffect(landmarks) {
+            const leftIrisCenter = landmarks[LEFT_IRIS_INDICES[0]];
+            const leftIrisTop = landmarks[LEFT_IRIS_INDICES[2]];
+            const leftIrisBottom = landmarks[LEFT_IRIS_INDICES[4]];
+            const rightIrisCenter = landmarks[RIGHT_IRIS_INDICES[0]];
+            const rightIrisTop = landmarks[RIGHT_IRIS_INDICES[2]];
+            const rightIrisBottom = landmarks[RIGHT_IRIS_INDICES[4]];
+
+            const lRadius = Math.abs(leftIrisTop.y - leftIrisBottom.y) * CANVAS_HEIGHT * 0.75;
+            const rRadius = Math.abs(rightIrisTop.y - rightIrisBottom.y) * CANVAS_HEIGHT * 0.75;
+
+            if (lRadius < 1 || rRadius < 1) return;
+
+            const lx = leftIrisCenter.x * CANVAS_WIDTH;
+            const ly = leftIrisCenter.y * CANVAS_HEIGHT;
+            const rx = rightIrisCenter.x * CANVAS_WIDTH;
+            const ry = rightIrisCenter.y * CANVAS_HEIGHT;
+
+            canvasCtx.save();
+            drawFireball(lx, ly, lRadius * 2.0);
+            drawFireball(rx, ry, rRadius * 2.0);
+            canvasCtx.restore();
+        }
+
+        // Big Mouth Effect
+        function applyBigMouthEffect(landmarks) {
+            const [x, y, w, h] = getStableBoundingBox(landmarks, MOUTH_INDICES);
+            if (w <= 1 || h <= 1) return;
+
+            const mouthData = canvasCtx.getImageData(x, y, w, h);
+            const drawableMouth = imageDataToDrawable(mouthData);
+
+            const scaleFactor = 1.8;
+            const newW = w * scaleFactor;
+            const newH = h * scaleFactor;
+
+            // Calculate position to center the enlarged mouth
+            const newX = (x + w / 2) - (newW / 2);
+            const newY = (y + h / 2) - (newH / 2);
+
+            canvasCtx.drawImage(drawableMouth, newX, newY, newW, newH);
+        }
+
+        // Main effects application function
+        function applyEffects(landmarks) {
+            if (currentEffect === "normal") return;
+
+            switch (currentEffect) {
+                case "cyclops":
+                    applyCyclopsEffect(landmarks);
+                    break;
+                case "laser_eyes":
+                    applyLaserEyesEffect(landmarks);
+                    break;
+                case "big_mouth":
+                    applyBigMouthEffect(landmarks);
+                    break;
+                case "swap":
+                    applyEyeSwapEffect(landmarks);
+                    break;
+            }
+        }
+
+        // MediaPipe callback function
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+
+            if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+                applyEffects(results.multiFaceLandmarks[0]);
+            }
+
+            canvasCtx.restore();
+        }
+
+        // Event Listeners
+        document.getElementById("normalBtn").addEventListener("click", () => setEffect("normal"));
+        document.getElementById("cyclopsBtn").addEventListener("click", () => setEffect("cyclops"));
+        document.getElementById("laserEyesBtn").addEventListener("click", () => setEffect("laser_eyes"));
+        document.getElementById("bigMouthBtn").addEventListener("click", () => setEffect("big_mouth"));
+        document.getElementById("swapModeSelect").addEventListener("change", (e) => setSwapMode(e.target.value));
+        document.getElementById("cyclopsFeatureSelect").addEventListener("change", (e) => setCyclopsFeature(e.target.value));
+
+        // MediaPipe Initialization
+        function initializeMediaPipe() {
+            statusDiv.innerHTML = "✅ Initializing MediaPipe...";
+
+            const faceMesh = new FaceMesh({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh@0.4/${file}`
+            });
+
+            faceMesh.setOptions({
+                maxNumFaces: 1,
+                refineLandmarks: true,
+                minDetectionConfidence: 0.5,
+                minTrackingConfidence: 0.5
+            });
+
+            faceMesh.onResults(onResults);
+
+            const camera = new Camera(videoElement, {
+                onFrame: async () => {
+                    await faceMesh.send({image: videoElement});
+                },
+                width: 640,
+                height: 480
+            });
+
+            camera.start();
+            statusDiv.innerHTML = "✅ Camera started! Apply an effect to begin.";
+            updateStatusMessage();
+        }
+
+        // Initialize when page loads
+        window.addEventListener('load', initializeMediaPipe);
+    </script>
+</body>
+</html>
